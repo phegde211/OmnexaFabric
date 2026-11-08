@@ -278,4 +278,4 @@ The two supporting use cases retain their original organization in:
     OmnexaFabric_Use_Cases.txt
 
     A) Simulated distributed Redis data store.
-    B) Marketplace / eBay-style user journey.
+    B) Marketplace user journey.
