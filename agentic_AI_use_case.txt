@@ -62,17 +62,18 @@ C.1 Actors
 C.2 Two separate responsibilities: infra vs. the resolution protocol
 --------------------------------------------------------------------
 These must not be conflated. The infrastructure does NOT populate the map server
-itself; it feeds the metadata to the endpoint's NHRP client, and the NHRP client
+itself; it feeds the metadata to the endpoint's resolution client, which
 registers it.
 
     Infrastructure's duty (Proposal Section 3.1): associate each tool/data
     endpoint with its metadata - identity-tag, capability-UID, attributes - and
-    make it available to the endpoint's local NHRP client. How the infra derives
-    the metadata is out of scope.
+    make it available to the endpoint's local resolution client. How the infra
+    derives the metadata is out of scope.
 
-    Resolution protocol's duty (Proposal Section 3.2c): the endpoint's NHRP
-    client then REGISTERS that metadata with the map server (the NHRP next-hop
-    server), via the registration extension:
+    Resolution protocol's duty (Proposal Section 3.2c): the endpoint's resolution
+    client - NHRP or LISP, the candidates in the proposal - then REGISTERS that
+    metadata with the map server (the NHRP next-hop server or LISP map server),
+    via the protocol's registration extension:
 
         capability-UID (tool type) -> { interceptor IP:port, identity-tag }
         data-key UID   (dataset)   -> { owner interceptor IP:port, identity-tag }
@@ -91,9 +92,9 @@ C.3 Sequence
 + omnexaAgent /               + policy authority                + omnexaAgent /
 interceptor                       (alongside)                     interceptor
      |                                 |                               |
-  PHASE 0 . registration  (endpoint NHRP client -> map server)
+  PHASE 0 . registration  (endpoint registers with map server)
      |                                 |  [infra feeds UID + identity] |
-     |                                 |< NHRP register UID + identity |
+     |                                 |<-- register UID + identity ---|
      |                                 |                               |
   PHASE 1 . discover  (exact resolution of a registered key)
      |---- resolve capability-UID ---->|                               |
@@ -105,7 +106,7 @@ interceptor                       (alongside)                     interceptor
      |[enforce at source: DENY -> drop locally]                        |
      |                                 |                               |
   PHASE 3 . connect + fetch  (data plane; bypasses map server)
-     |==================== NHRP GRE + IPsec tunnel ===================>|
+     |=================== establish approved tunnel ==================>|
      |================ forward actual tool / data call ===============>|
      |<============================ reply =============================|
      |[cache resolve + policy + tunnel; revoke on change]              |
@@ -118,13 +119,13 @@ interceptor                       (alongside)                     interceptor
 
 C.4 Phase by phase
 ------------------
-PHASE 0 - Registration (infra supplies metadata; NHRP client registers).
-    The infrastructure feeds each endpoint's NHRP client the capability-UID (or
-    data-key UID) and identity-tag. The NHRP client then registers that mapping
-    with the map server. The infra's job ends at supplying the metadata; the
-    registration itself is the resolution protocol's. Nothing is discoverable
-    until it has been registered - the precondition of every directory, DNS
-    included.
+PHASE 0 - Registration (infra supplies metadata; resolution client registers).
+    The infrastructure feeds each endpoint's resolution client (NHRP or LISP) the
+    capability-UID (or data-key UID) and identity-tag. The resolution client then
+    registers that mapping with the map server. The infra's job ends at supplying
+    the metadata; the registration itself is the resolution protocol's. Nothing
+    is discoverable until it has been registered - the precondition of every
+    directory, DNS included.
 
 PHASE 1 - Discover (capability #1: UID -> destination resolution).
     The agent's interceptor resolves the capability-UID it needs. The map server
@@ -143,10 +144,11 @@ PHASE 2 - Authorize (capability #2: source-side policy on the identity pair).
     decides whether THIS agent may use THIS tool before a single request is sent.
 
 PHASE 3 - Connect and fetch (capability #3: policy-guided data path).
-    On permit, the resolution has already provided underlay reachability, so
-    NHRP establishes a GRE shortcut tunnel to the destination POP, protected by
-    IPsec (for example strongSwan), over the overlay network. The interceptor
-    then forwards the ACTUAL tool or data call through the tunnel; the remote
+    On permit, the resolution has already provided underlay reachability, so a
+    shortcut path to the destination POP is established over the overlay by the
+    chosen protocol's data plane - for example NHRP building a GRE tunnel
+    protected by IPsec (strongSwan), or LISP encapsulation. The interceptor then
+    forwards the ACTUAL tool or data call through the tunnel; the remote
     interceptor hands it to its local tool/data service as if it had originated
     locally - preserving the call's native semantics, the same way Use Case A
     preserves the RESP request (Section 4.3.2.1 b.3). The reply returns over the
@@ -166,8 +168,8 @@ C.5 Design notes
        cover it: a withdrawn tool revokes its mapping and stale entries age out.
 
     c) Tools, data and peer agents are one mechanism, three namespaces. The same
-       resolve -> policy -> GRE/IPsec connect machinery serves "tool:*",
-       "data:*" and "agent:*" identifiers without change.
+       resolve -> policy -> connect machinery serves "tool:*", "data:*" and
+       "agent:*" identifiers without change.
 
     d) Policy and transport detail remain design work, as stated throughout the
        proposal. This document explains the architectural fit, not a finished
