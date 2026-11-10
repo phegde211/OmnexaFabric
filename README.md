@@ -46,10 +46,13 @@ policy-governed communication.
 - **Core networking underlay & architecture** — the resolution model (pull vs push), candidate
   protocols (**NHRP / LISP**), the map server, metadata carriage, and source-side policy
   enforcement:
-  **[OmnexaFabric_Proposal.txt](OmnexaFabric_Proposal.txt)**
+  **[OmnexaFabric_architecture.md](OmnexaFabric_architecture.md)**
 - **Worked use cases** — a simulated distributed Redis data store and a marketplace user journey
   that exercise on-demand resolution plus source-side policy:
-  **[OmnexaFabric_Use_Cases.txt](OmnexaFabric_Use_Cases.txt)**
+  **[OmnexaFabric_Use_Cases.md](OmnexaFabric_Use_Cases.md)**
+- **Agentic AI use case** — tool and data resolution with policy-gated fetch, with the
+  three-party sequence (agent app, map server, tool/data):
+  **[agentic_AI_use_case.md](agentic_AI_use_case.md)**
 
 ---
 

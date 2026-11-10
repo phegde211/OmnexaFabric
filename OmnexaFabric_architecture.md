@@ -1,0 +1,303 @@
+# OmnexaFabric
+
+Smart fabric for secure, policy-governed information movement.
+(omni - multiple addressing, nexus - connection between entites)
+
+## Copyright and Permissions
+
+Copyright (c) 2026 Prabhat Hegde. All rights reserved.
+
+OmnexaFabric: Architectural Proposal and Supporting Use Cases
+
+Copyright is claimed in the original text, diagrams, and presentation
+of this proposal.
+
+Except as permitted by applicable law, no protected portion of this
+document may be reproduced, republished, distributed, translated, or
+adapted without the prior written permission of the copyright owner.
+
+Third-party materials, product names, trademarks, and referenced
+standards remain subject to their respective owners' rights.
+Their inclusion does not imply affiliation or endorsement.
+
+This notice protects the original expression of the proposal. It does
+not claim exclusive ownership of underlying ideas, technical concepts,
+methods, or existing protocols and standards.
+
+## 1. Prelude
+
+Service mesh is an established concept with multiple solutions.
+Containerized environments - Istio, Cilium, and others.
+Conventional networks - BGP-EVPN and Cisco solutions such as DMVPN, LISP, and EVPN.
+
+These technologies differ in implementation. The underlying process can be
+viewed as two separate responsibilities:
+
+1. Make mapping information available between overlay addresses and their
+   reachable underlay/public addresses.
+2. Use that mapping to establish the connection and encapsulate/carry
+   overlay traffic.
+
+BGP-EVPN's control plane provides mapping information; the forwarding system
+uses it. An integrated service mesh addresses both discovery and connectivity
+through its data plane.
+
+### 1.1 Push versus pull-based approach
+
+**Push approach:**
+Mapping information is distributed to participating nodes, including nodes
+that may not currently need it. Preloading can speed up direct connection
+establishment, but any changes must also reach the all recipients. This
+affects/delays convergence and locally maintained state.
+
+**Pull approach:**
+Mapping information is fetched on demand. Initial connection
+establishment may be delayed, but nodes retain only those mappings which
+they need.
+
+The intended convergence advantage is that updates concern endpoints with
+resolved/cached mappings. Other nodes fetch the current mapping when they
+need it.
+
+## 2. Proposal
+
+OmnexaFabric is a service mesh architecture focused on making connection
+establishment flexible and multipurpose, with additional services.
+
+The three differentiating capabilities proposed are:
+
+1. **Flexible identifier-to-destination resolution.**
+   In addition to IP-to-IP resolution, support a UID-to-IP mapping.
+
+   ```
+   Overlay IP  -> Reachable underlay IP
+   UID         -> ASCII string/any ID
+   ```
+
+   The application decides what the UID represents and how it is
+   interpreted. The fabric resolves where to reach its source. Section 4 in
+   [OmnexaFabric_Use_Cases.md](OmnexaFabric_Use_Cases.md) illustrates this
+   capability.
+
+2. **Additional metadata for source-side policy enforcement.**
+   Alongside the resolved destination address, obtain associated metadata,
+   such as the destination identity.
+   With source and destination identity known, the policy for this pair to
+   communicate can be downloaded from policy server. As per the policy
+   the source can then permit, deny, or govern the connection before admitting
+   application traffic.
+   Initial resolution/policy download can delay traffic, but every node need
+   not preload the global policy table. Valid cached state supports
+   subsequent communication.
+
+3. **Policy-guided paths and value-added services.**
+   Prior knowledge of identity allows policy to select and enforce:
+   - Service insertion: firewalling or inspection.
+   - Traffic engineering.
+   - Monitoring, logging, audit, and tracing.
+
+The main crux is on-demand destination information and policy download for the
+source-destination identity pair. Source enforcement already exists; obtaining
+the relevant state dynamically is the focus here.
+
+### 2.1 My personal take
+
+I would prefer NHRP (RFC 2735, RFC 2332) or LISP (RFC 9300, RFC 9301) as
+candidate resolution protocols for the following reasons:
+
+1. My expectation is that they can offer a simple implementation and a
+   lightweight compute footprint compared with other approaches.
+2. Their pull-based resolution model suits the intended on-demand
+   acquisition of mappings, in contrast to the push/distribution model
+   operated by Cilium and BGP.
+3. There are reports of VyOS supporting NHRP and GRE. One deployment idea is
+   to use VyOS and strongSwan as separate containers within a DaemonSet
+   deployment in a cluster (i.e a POP)
+4. Protocol extensions can carry metadata in control messages, including
+   registrations and resolution exchanges. This provides a basis for
+   extending the lookup to application-defined keys and returning their
+   destination mappings and associated attributes.
+
+   Carrying metadata and resolving by UID are separate capabilities. UID
+   lookup also requires namespace support in registration, directory
+   storage, and resolution.
+
+NHRP/LISP are the preferred candidates in this proposal. An existing mesh can
+also be enhanced to expose the same capabilities.
+
+## 3. Design Concept
+
+Topology: registration/resolution through a map server, followed by an
+approved data-plane path between participating agents.
+
+```
++--------------------+       +--------------------------+
+| Participating      |<----->|        Map server        |
+| node / POP1        |       |                          |
+|                    |       |                          |
+|  Application       |       | Identifier -> destination|
+|       |            |       | Associated metadata      |
+|  omnexaAgent       |       +-------------+------------+
++---------+----------+                     |
+          |                                |
+          |                                v
+          |                     +----------------------+
+          |                     | Participating        |
+          |                     | node / POP-n         |
+          |                     |                      |
+          |                     |  omnexaAgent         |
+          |                     |       |              |
+          |                     |  Destination service |
+          |                     +----------+-----------+
+          |                                ^
+          +--------------------------------+
+             Policy-approved data path
+             Direct, or via required services
+```
+
+Control sequence:
+
+```
+Resolve destination and metadata
+    -> Obtain policy for the source-destination identity pair
+    -> Permit/deny and select required services
+    -> Establish the approved connection
+```
+
+Policy may be downloaded from a policy authority integrated with, or
+consulted alongside, the resolution service. The central mapping service
+does not need to relay application payloads.
+
+### 3.1 Assumptions: out of scope for this document
+
+The underlying infrastructure is responsible for:
+
+a) Associating every communicating endpoint, such as a microservice or pod,
+   with its metadata: identity tag, UID, and other attributes. The
+   association is stored within the relevant infrastructure or cluster.
+
+b) Making these associations available to BGP, ClusterMesh, and/or the
+   selected resolution protocol.
+
+### 3.2 Storing metadata
+
+a) **Cilium:**
+   Kubernetes maintains endpoint metadata in its control infrastructure (Etcd).
+   Cilium obtains relevant information from it and makes it available through
+   its cluster/ClusterMesh API components. Finer implementation details can
+   be found here: https://docs.cilium.io/en/stable/network/clustermesh/intro/
+
+b) **BGP:**
+   Metadata can be propagated with endpoint routes, such as /32 routes,
+   through community attributes. RFC 4360 is the referenced
+   extended-community mechanism.
+
+c) **NHRP/LISP:**
+   Metadata is proposed to be carried in extensions to control messages,
+   including registration and resolution exchanges. RFC 9306 is the
+   referenced LISP vendor-specific extension.
+   An endpoint registration can associate its overlay address with
+   additional metadata. UID-based registration and lookup require the
+   corresponding identifier support.
+
+### 3.3 Exchange of metadata
+
+a) **Cilium:**
+   `cilium clustermesh connect ...`
+   Connecting clusters through ClusterMesh makes relevant endpoint and
+   identity information available across the connected clusters.
+
+b) **BGP:**
+   Metadata accompanies the applicable route updates.
+
+c) **Resolution protocol:**
+   Relevant destination information is obtained when a remote endpoint is
+   resolved dynamically via NHRP/Lisp resolution request/reply.
+
+### 3.4 How policy can govern connection establishment
+
+The identity-tag concept is comparable to the policy intent behind Cisco
+TrustSec: associate an endpoint with an identity/group and use it to permit or
+deny communication. Data-plane encapsulations may also carry identity/group tags
+for enforcement along the path or at the destination.
+
+OmnexaFabric uses the destination metadata obtained during control-plane
+resolution to support a decision at the source before application traffic is
+sent. Relevant information can be supplied by Cilium, BGP, or the selected
+resolution protocol.
+
+Example: service-A wants to communicate with service-B.
+
+A path that relies on a remote firewall for the decision:
+
+```
+Service-A --------> Firewall --------> Service-B
+                         |
+                         +----> Drop if denied
+
+Traffic travels to the firewall before it is rejected.
+```
+
+Proposed demand-driven source-side decision:
+
+```
+Service-A requests Service-B
+            |
+            v
+Resolve B's destination and trusted identity metadata
+            |
+            v
+Is a valid policy cached for identity pair (A, B)?
+            |
+    +-------+-------+
+    |               |
+   Yes              No
+    |               |
+    |               v
+    |      Download policy for (A, B)
+    |               |
+    +-------+-------+
+            |
+            v
+Apply the policy at the source enforcement point
+            |
+    +-------+-------------------+
+    |                           |
+   Deny                        Permit
+    |                           |
+    v                           v
+Drop locally             Establish approved path
+                         Direct, or through required
+                         firewall/inspection services
+```
+
+Hold traffic until policy is available and enforced. A denied connection need
+not travel to a remote firewall merely to be dropped there.
+
+Reuse valid cached policy; govern it through expiry, changes, and revocation.
+This trades some first-connection delay for less locally stored mapping and
+policy state.
+
+Important distinction:
+
+- **Control plane:**
+  Resolve location/metadata and obtain policy before establishing
+  the approved communication.
+
+- **Data plane:**
+  Carry application traffic over that connection. Encapsulation
+  can separately carry tag information where the deployment uses
+  it.
+
+The purpose here is to explain the architectural possibilities. Finer policy,
+transport, and failure-handling considerations remain design work.
+
+## 4. Use Cases
+
+The supporting use cases retain their original organization in:
+
+- [OmnexaFabric_Use_Cases.md](OmnexaFabric_Use_Cases.md)
+  - A) Simulated distributed Redis data store.
+  - B) Marketplace user journey.
+- [agentic_AI_use_case.md](agentic_AI_use_case.md)
+  - C) Agentic AI - tool and data resolution with policy-gated fetch.
