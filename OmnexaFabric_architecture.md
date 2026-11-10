@@ -102,17 +102,17 @@ the relevant state dynamically is the focus here.
 
 ### 2.1 My personal take
 
-I would prefer NHRP (RFC 2735, RFC 2332) or LISP (RFC 9300, RFC 9301) as
-candidate resolution protocols for the following reasons:
+**I would prefer NHRP (RFC 2735, RFC 2332) or LISP (RFC 9300, RFC 9301) as
+candidate resolution protocols for the following reasons:**
 
 1. My expectation is that they can offer a simple implementation and a
    lightweight compute footprint compared with other approaches.
 2. Their pull-based resolution model suits the intended on-demand
    acquisition of mappings, in contrast to the push/distribution model
    operated by Cilium and BGP.
-3. There are reports of VyOS supporting NHRP and GRE. One deployment idea is
+3. **There are reports of VyOS supporting NHRP and GRE. One deployment idea is
    to use VyOS and strongSwan as separate containers within a DaemonSet
-   deployment in a cluster (i.e a POP)
+   deployment in a cluster (i.e a POP)**
 4. Protocol extensions can carry metadata in control messages, including
    registrations and resolution exchanges. This provides a basis for
    extending the lookup to application-defined keys and returning their
@@ -193,9 +193,9 @@ b) **BGP:**
    extended-community mechanism.
 
 c) **NHRP/LISP:**
-   Metadata is proposed to be carried in extensions to control messages,
+   **Metadata is proposed to be carried in extensions to control messages,
    including registration and resolution exchanges. RFC 9306 is the
-   referenced LISP vendor-specific extension.
+   referenced LISP vendor-specific extension.**
    An endpoint registration can associate its overlay address with
    additional metadata. UID-based registration and lookup require the
    corresponding identifier support.
@@ -213,6 +213,8 @@ b) **BGP:**
 c) **Resolution protocol:**
    Relevant destination information is obtained when a remote endpoint is
    resolved dynamically via NHRP/Lisp resolution request/reply.
+   Note: **It is assumed that the reader is aware of the working of NHRP/Lisp 
+         protocols. If not, kindly refer to sect-2.1 for the RFCs.**
 
 ### 3.4 How policy can govern connection establishment
 
